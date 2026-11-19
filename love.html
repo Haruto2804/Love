@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HEARTBEAT // AUDIO CONSOLE</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: JetBrains Mono & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;500;700;800&display=swap"
+        rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="./sugar_data.js"></script>
+
+    <style>
+        :root {
+            --neon-pink: #ff1e6e;
+            --neon-crimson: #ff0044;
+            --neon-glow: rgba(255, 30, 110, 0.55);
+            --bg-dark: #060609;
+            --panel-bg: rgba(13, 14, 21, 0.85);
+            --border-color: rgba(255, 30, 110, 0.25);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', monospace;
+            overflow: hidden;
+            height: 100dvh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Hiệu ứng lưới nền & quét CRT nhẹ chuẩn Console */
+        .crt-grid {
+            background-image:
+                radial-gradient(circle at 50% 42%, rgba(255, 20, 95, 0.08) 0%, transparent 60%),
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 32px 32px, 32px 32px;
+        }
+
+        .scanlines::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(0deg,
+                    rgba(0, 0, 0, 0.14) 0px,
+                    rgba(0, 0, 0, 0.14) 1px,
+                    transparent 1px,
+                    transparent 3px);
+            pointer-events: none;
+            z-index: 40;
+        }
+
+        /* Canvas chính chiếm phần lớn không gian */
+        #visualizer-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Custom Neon Glows */
+        .neon-text {
+            text-shadow: 0 0 10px var(--neon-glow), 0 0 22px rgba(255, 0, 68, 0.35);
+        }
+
+        .neon-border {
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(255, 30, 110, 0.05);
+        }
+
+        .btn-console {
+            background: rgba(255, 30, 110, 0.12);
+            border: 1px solid rgba(255, 30, 110, 0.45);
+            color: #ff7aa8;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .btn-console:hover:not(:disabled) {
+            background: rgba(255, 30, 110, 0.25);
+            border-color: #ff1e6e;
+            color: #ffffff;
+            box-shadow: 0 0 18px rgba(255, 30, 110, 0.45);
+            transform: translateY(-1px);
+        }
+
+        .btn-console:active:not(:disabled) {
+            transform: scale(0.97);
+        }
+
+        .btn-primary-neon {
+            background: linear-gradient(135deg, #ff1e6e 0%, #d90445 100%);
+            border: 1px solid #ff6b9d;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(255, 30, 110, 0.45);
+        }
+
+        .btn-primary-neon:hover:not(:disabled) {
+            box-shadow: 0 0 28px rgba(255, 30, 110, 0.75);
+            filter: brightness(1.1);
+        }
+
+        /* Thanh tiến trình tùy chỉnh */
+        input[type="range"].console-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.1);
+            height: 6px;
+            border-radius: 999px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        input[type="range"].console-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #ff1e6e;
+            box-shadow: 0 0 10px #ff1e6e, 0 0 20px #ff1e6e;
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+
+        input[type="range"].console-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+
+        /* Drag & Drop Overlay */
+        #drop-overlay {
+            backdrop-filter: blur(8px);
+            transition: opacity 0.2s ease;
+        }
+
+        /* Pulse animation cho đèn trạng thái */
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.25;
+            }
+        }
+
+        .status-dot {
+            animation: blink 1.4s infinite;
+        }
+    </style>
+</head>
+
+<body class="crt-grid scanlines relative">
+
+    <!-- Input file ẩn để chọn MP3 -->
+    <input type="file" id="mp3-file-input" accept="audio/mp3,audio/mpeg,audio/*" class="hidden">
+
+    <!-- Drag & Drop Overlay khi kéo file vào màn hình -->
+    <div id="drop-overlay"
+        class="fixed inset-0 z-50 bg-black/80 border-2 border-dashed border-[#ff1e6e] m-3 rounded-2xl hidden flex-col items-center justify-center pointer-events-none">
+        <div
+            class="w-20 h-20 rounded-full bg-[#ff1e6e]/20 border border-[#ff1e6e] flex items-center justify-center mb-4 animate-bounce">
+            <i class="fa-solid fa-file-audio text-3xl text-[#ff1e6e]"></i>
+        </div>
+        <h2 class="text-xl md:text-2xl font-bold text-white tracking-wider neon-text">THẢ FILE MP3 VÀO ĐÂY</h2>
+        <p class="text-xs md:text-sm text-pink-300/80 mt-2">Hỗ trợ MP3, WAV, M4A... (Ví dụ: Sugar - Maroon 5.mp3)</p>
+    </div>
+
+    <!-- Hộp thông báo (Toast) -->
+    <div id="toast-box"
+        class="fixed top-4 right-4 z-50 transform translate-x-[130%] transition-transform duration-300 bg-[#12131d] border border-[#ff1e6e] text-pink-100 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 max-w-xs sm:max-w-sm">
+        <i id="toast-icon" class="fa-solid fa-terminal text-[#ff1e6e]"></i>
+        <span id="toast-message" class="text-xs leading-relaxed">Hệ thống sẵn sàng.</span>
+    </div>
+
+    <!-- HEADER CONSOLE GỌN GÀNG TRÊN CÙNG -->
+    <header class="w-full px-3 sm:px-6 pt-2.5 pb-1 flex items-center justify-between z-20 shrink-0">
+        <div class="flex items-center gap-2.5">
+            <span id="sys-led" class="w-2.5 h-2.5 rounded-full bg-rose-500 status-dot shadow-[0_0_10px_#ff1e6e]"></span>
+            <span class="text-xs sm:text-sm font-extrabold tracking-widest text-white neon-text">
+                HEART_OS <span class="text-[#ff1e6e] font-normal">v2.6 // MP3_PULSE</span>
+            </span>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-4 text-[11px] sm:text-xs text-slate-400">
+            <div class="hidden md:flex items-center gap-2 bg-white/5 px-2.5 py-1 rounded-lg border border-white/10">
+                <span class="text-pink-400">FFT:</span>
+                <span class="text-slate-200 font-semibold">2048</span>
+                <span class="text-slate-600">|</span>
+                <span class="text-pink-400">BASS_GAIN:</span>
+                <span id="header-bass-val" class="text-white font-bold w-8 text-right">00%</span>
+            </div>
+            <button id="btn-upload-top"
+                class="btn-console px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-folder-open"></i>
+                <span>CHỌN FILE MP3</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- KHU VỰC MÀN HÌNH TRÁI TIM LỚN Ở TRUNG TÂM -->
+    <main id="canvas-wrapper" class="relative flex-1 w-full min-h-0 flex items-center justify-center overflow-hidden">
+        <!-- Góc trang trí HUD Terminal xung quanh trái tim -->
+        <div
+            class="pointer-events-none absolute top-2 left-4 sm:left-6 text-[10px] sm:text-xs text-pink-500/60 leading-tight hidden sm:block">
+            <div>[SYS.HEART_MATRIX] :: ACTIVE</div>
+            <div>PARTICLES: <span id="hud-particles" class="text-pink-300">2,400</span> NODES</div>
+            <div>MODE: <span id="hud-mode" class="text-pink-300">IDLE_STANDBY</span></div>
+        </div>
+
+        <div
+            class="pointer-events-none absolute top-2 right-4 sm:right-6 text-[10px] sm:text-xs text-pink-500/60 text-right leading-tight hidden sm:block">
+            <div>SUB_BASS (20-140Hz)</div>
+            <div id="hud-ascii-bar" class="text-[#ff1e6e] font-bold tracking-tighter">[░░░░░░░░░░░░░░░░]</div>
+            <div>PEAK_AMP: <span id="hud-peak" class="text-pink-300">0.00 dB</span></div>
+        </div>
+
+        <!-- Overlay hướng dẫn nhanh khi chưa tải file nhạc -->
+        <div id="empty-state-prompt"
+            class="absolute z-10 flex flex-col items-center text-center px-4 pointer-events-auto">
+            <div
+                class="mt-44 sm:mt-52 bg-[#0b0c12]/90 backdrop-blur-md border border-[#ff1e6e]/40 px-5 py-3.5 rounded-2xl shadow-[0_0_30px_rgba(255,30,110,0.2)] max-w-md">
+                <p class="text-xs sm:text-sm text-pink-200 font-medium mb-2.5">
+                    <i class="fa-solid fa-wave-square text-[#ff1e6e] mr-1.5"></i>
+                    Tải file <span class="text-white font-bold">Sugar - Maroon 5.mp3</span> (hoặc bài bất kỳ) để kích
+                    hoạt nhịp đập
+                </p>
+                <div class="flex flex-wrap items-center justify-center gap-2">
+                    <button id="btn-upload-center"
+                        class="btn-primary-neon px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-upload"></i>
+                        <span>TẢI LÊN FILE MP3 TỪ MÁY</span>
+                    </button>
+                    <button id="btn-demo-pulse"
+                        class="btn-console px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        title="Giả lập nhịp đập 120 BPM (nhịp bài Sugar) nếu bạn chưa chọn file">
+                        <i class="fa-solid fa-heart-pulse"></i>
+                        <span>TEST NHỊP 120 BPM</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas Trái Tim Hạt -->
+        <canvas id="visualizer-canvas"></canvas>
+    </main>
+
+    <!-- TERMINAL / CONSOLE ĐIỀU KHIỂN LỚN BÊN DƯỚI -->
+    <footer class="w-full px-3 sm:px-6 pb-3 sm:pb-4 pt-1 z-20 shrink-0">
+        <div
+            class="max-w-5xl mx-auto bg-[#0b0c13]/92 backdrop-blur-xl neon-border rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5">
+
+            <!-- Hàng 1: Thông tin bài hát kiểu Console + Thanh Frequency Bar trực quan -->
+            <div
+                class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span class="text-[#ff1e6e] font-bold text-xs sm:text-sm shrink-0">ngocanh@heart:~$</span>
+                    <div class="truncate text-xs sm:text-sm md:text-base font-bold text-white tracking-wide"
+                        id="track-title">
+                        Chưa nạp file âm thanh (Kéo thả hoặc nhấn Chọn File MP3)
+                    </div>
+                </div>
+
+                <!-- Mini Spectrum Analyzer Bar (16 cột tần số thời gian thực) -->
+                <div class="flex items-end gap-1 h-6 px-2 py-1 bg-black/50 rounded-lg border border-white/5 self-start sm:self-auto shrink-0"
+                    id="mini-spectrum" title="Phổ tần số Bass -> Treble">
+                </div>
+            </div>
+
+            <!-- Hàng 2: Thanh tiến trình (Seek Bar) & Thời gian -->
+            <div class="flex items-center gap-3 text-[11px] sm:text-xs font-mono">
+                <span id="time-current" class="text-pink-400 font-bold w-10 text-right">00:00</span>
+                <input type="range" id="seek-slider" class="console-slider flex-1" min="0" max="100" value="0"
+                    step="0.1" disabled>
+                <span id="time-duration" class="text-slate-400 w-10">00:00</span>
+            </div>
+
+            <!-- Hàng 3: Các nút điều khiển lớn, thân thiện cảm ứng + Điều chỉnh độ nhạy Bass -->
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+
+                <!-- Nhóm nút Phát / Tạm dừng / Đổi bài -->
+                <div class="flex items-center gap-2">
+                    <button id="btn-play-pause"
+                        class="btn-primary-neon px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled>
+                        <i id="play-pause-icon" class="fa-solid fa-play"></i>
+                        <span id="play-pause-text">PHÁT NHẠC</span>
+                    </button>
+
+                    <button id="btn-stop"
+                        class="btn-console p-2.5 sm:px-3.5 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                        disabled title="Dừng và tua về đầu">
+                        <i class="fa-solid fa-stop"></i>
+                        <span class="hidden md:inline">DỪNG</span>
+                    </button>
+
+                    <button id="btn-upload-bottom"
+                        class="btn-console px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-compact-disc fa-spin" style="--fa-animation-duration: 6s;"></i>
+                        <span>NẠP MP3 KHÁC</span>
+                    </button>
+                </div>
+
+                <!-- Nhóm tinh chỉnh Độ nảy Bass & Âm lượng -->
+                <div class="flex items-center gap-3 sm:gap-4 ml-auto">
+                    <!-- Độ nhạy rung (Bass Boost Visual) -->
+                    <div class="flex items-center gap-1.5 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/10">
+                        <i class="fa-solid fa-bolt text-[#ff1e6e] text-xs" title="Độ mạnh nhịp đập"></i>
+                        <span class="text-[10px] sm:text-xs text-slate-300 hidden sm:inline">LỰC ĐẬP:</span>
+                        <input type="range" id="sensitivity-slider" class="console-slider w-14 sm:w-20" min="0.6"
+                            max="2.2" step="0.1" value="1.3">
+                    </div>
+
+                    <!-- Âm lượng -->
+                    <div class="flex items-center gap-1.5 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/10">
+                        <button id="btn-mute" class="text-pink-400 hover:text-white text-xs cursor-pointer">
+                            <i id="volume-icon" class="fa-solid fa-volume-high"></i>
+                        </button>
+                        <input type="range" id="volume-slider" class="console-slider w-14 sm:w-20" min="0" max="1"
+                            step="0.02" value="0.9">
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </footer>
+
+    <!-- Phần tử Audio ẩn để phát file MP3 -->
+    <audio id="audio-player" src="./sugar.mp3" preload="auto" loop></audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- CẤU HÌNH BÀI HÁT MẶC ĐỊNH ---
+            const DEFAULT_AUDIO_URL = "./sugar.mp3";
+            const DEFAULT_TRACK_TITLE = "Sugar";
+
+            // --- DOM ELEMENTS ---
+            const canvas = document.getElementById('visualizer-canvas');
+            const ctx = canvas.getContext('2d');
+            const canvasWrapper = document.getElementById('canvas-wrapper');
+
+            const audioPlayer = document.getElementById('audio-player');
+            const fileInput = document.getElementById('mp3-file-input');
+            const dropOverlay = document.getElementById('drop-overlay');
+            const emptyStatePrompt = document.getElementById('empty-state-prompt');
+
+            // Buttons & Sliders
+            const btnUploadTop = document.getElementById('btn-upload-top');
+            const btnUploadCenter = document.getElementById('btn-upload-center');
+            const btnUploadBottom = document.getElementById('btn-upload-bottom');
+            const btnDemoPulse = document.getElementById('btn-demo-pulse');
+            const btnPlayPause = document.getElementById('btn-play-pause');
+            const playPauseIcon = document.getElementById('play-pause-icon');
+            const playPauseText = document.getElementById('play-pause-text');
+            const btnStop = document.getElementById('btn-stop');
+            const btnMute = document.getElementById('btn-mute');
+            const volumeIcon = document.getElementById('volume-icon');
+
+            const seekSlider = document.getElementById('seek-slider');
+            const volumeSlider = document.getElementById('volume-slider');
+            const sensitivitySlider = document.getElementById('sensitivity-slider');
+
+            // Telemetry / HUD Displays
+            const trackTitleEl = document.getElementById('track-title');
+            const timeCurrentEl = document.getElementById('time-current');
+            const timeDurationEl = document.getElementById('time-duration');
+            const headerBassVal = document.getElementById('header-bass-val');
+            const hudMode = document.getElementById('hud-mode');
+            const hudAsciiBar = document.getElementById('hud-ascii-bar');
+            const hudPeak = document.getElementById('hud-peak');
+            const hudParticles = document.getElementById('hud-particles');
+            const miniSpectrum = document.getElementById('mini-spectrum');
+
+            // --- STATE VARIABLES ---
+            let audioCtx = null;
+            let analyser = null;
+            let sourceNode = null;
+            let dataArray = null;
+            let bufferLength = 0;
+
+            let isAudioLoaded = false;
+            let isPlaying = false;
+            let isDemoMode = false;
+            let isSeeking = false;
+            let currentObjectUrl = null;
+            let beatSensitivity = parseFloat(sensitivitySlider.value);
+
+            // Biến vật lý nhịp đập trái tim
+            let smoothedBass = 0;
+            let smoothedMid = 0;
+            let prevBass = 0;
+            let prevKickAvg = 0;
+            let shockwaves = [];
+
+            // Khởi tạo 16 cột Mini Spectrum trên Console
+            const spectrumBars = [];
+            for (let i = 0; i < 16; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'w-1 sm:w-1.5 bg-[#ff1e6e] rounded-t transition-all duration-75';
+                bar.style.height = '15%';
+                miniSpectrum.appendChild(bar);
+                spectrumBars.push(bar);
+            }
+
+            // --- HỆ THỐNG THÔNG BÁO TOAST ---
+            let toastTimer = null;
+            function showToast(message, isError = false) {
+                const toastBox = document.getElementById('toast-box');
+                const toastMsg = document.getElementById('toast-message');
+                const toastIcon = document.getElementById('toast-icon');
+
+                toastMsg.textContent = message;
+                toastIcon.className = isError
+                    ? 'fa-solid fa-triangle-exclamation text-amber-400'
+                    : 'fa-solid fa-terminal text-[#ff1e6e]';
+
+                toastBox.classList.remove('translate-x-[130%]');
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => {
+                    toastBox.classList.add('translate-x-[130%]');
+                }, 3500);
+            }
+
+            // --- KHỞI TẠO WEB AUDIO API ---
+            function initWebAudio() {
+                if (!audioCtx) {
+                    try {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        audioCtx = new AudioContextClass();
+                        analyser = audioCtx.createAnalyser();
+                        analyser.fftSize = 512;
+                        analyser.smoothingTimeConstant = 0.8;
+
+                        bufferLength = analyser.frequencyBinCount;
+                        dataArray = new Uint8Array(bufferLength);
+
+                        sourceNode = audioCtx.createMediaElementSource(audioPlayer);
+                        sourceNode.connect(analyser);
+                        analyser.connect(audioCtx.destination);
+                    } catch (e) {
+                        console.warn("Web Audio API warning:", e);
+                    }
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            }
+
+            // --- XỬ LÝ TẢI FILE MP3 ---
+            function handleAudioFile(file) {
+                if (!file) return;
+                if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.mp3')) {
+                    showToast('Vui lòng chọn đúng định dạng file nhạc (MP3, WAV, M4A...)', true);
+                    return;
+                }
+
+                try {
+                    isDemoMode = false;
+
+                    if (currentObjectUrl) {
+                        URL.revokeObjectURL(currentObjectUrl);
+                        currentObjectUrl = null;
+                    }
+
+                    currentObjectUrl = URL.createObjectURL(file);
+                    audioPlayer.src = currentObjectUrl;
+                    audioPlayer.load();
+
+                    // Với blob URL của file do người dùng upload, createMediaElementSource được trình duyệt cho phép
+                    if (!audioCtx) {
+                        try {
+                            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                            audioCtx = new AudioContextClass();
+                            analyser = audioCtx.createAnalyser();
+                            analyser.fftSize = 512;
+                            analyser.smoothingTimeConstant = 0.8;
+                            bufferLength = analyser.frequencyBinCount;
+                            dataArray = new Uint8Array(bufferLength);
+                            sourceNode = audioCtx.createMediaElementSource(audioPlayer);
+                            sourceNode.connect(analyser);
+                            analyser.connect(audioCtx.destination);
+                        } catch (e) {
+                            console.warn("Web Audio setup warning:", e);
+                        }
+                    }
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    const cleanName = file.name.replace(/\.[^/.]+$/, "");
+                    trackTitleEl.textContent = `${cleanName} [MP3_STREAM]`;
+                    emptyStatePrompt.classList.add('hidden');
+
+                    isAudioLoaded = true;
+                    btnPlayPause.disabled = false;
+                    btnStop.disabled = false;
+                    seekSlider.disabled = false;
+
+                    audioPlayer.play().then(() => {
+                        updatePlayStateUI(true);
+                        showToast(`Đang phát: ${cleanName}`);
+                    }).catch(() => {
+                        updatePlayStateUI(false);
+                        showToast('Nhấn nút PHÁT NHẠC để bắt đầu!', false);
+                    });
+
+                } catch (error) {
+                    console.error(error);
+                    showToast('Không thể đọc file âm thanh này.', true);
+                }
+            }
+
+            function updatePlayStateUI(playing) {
+                isPlaying = playing;
+                if (playing) {
+                    playPauseIcon.className = 'fa-solid fa-pause';
+                    playPauseText.textContent = 'TẠM DỪNG';
+                    hudMode.textContent = isDemoMode ? 'DEMO_120BPM' : 'LIVE_AUDIO_SYNC';
+                } else {
+                    playPauseIcon.className = 'fa-solid fa-play';
+                    playPauseText.textContent = 'PHÁT NHẠC';
+                    hudMode.textContent = 'PAUSED_STANDBY';
+                }
+            }
+
+            // Sự kiện chọn file qua các nút
+            [btnUploadTop, btnUploadCenter, btnUploadBottom].forEach(btn => {
+                btn.addEventListener('click', () => fileInput.click());
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    handleAudioFile(e.target.files[0]);
+                }
+            });
+
+            // Sự kiện Kéo & Thả (Drag & Drop) toàn màn hình
+            let dragCounter = 0;
+            window.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                dragCounter++;
+                dropOverlay.classList.remove('hidden');
+                dropOverlay.classList.add('flex');
+            });
+
+            window.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dragCounter--;
+                if (dragCounter <= 0) {
+                    dragCounter = 0;
+                    dropOverlay.classList.add('hidden');
+                    dropOverlay.classList.remove('flex');
+                }
+            });
+
+            window.addEventListener('dragover', (e) => e.preventDefault());
+
+            window.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragCounter = 0;
+                dropOverlay.classList.add('hidden');
+                dropOverlay.classList.remove('flex');
+
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleAudioFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            // Chế độ Test nhịp 120 BPM
+            btnDemoPulse.addEventListener('click', () => {
+                isDemoMode = true;
+                isAudioLoaded = false;
+                audioPlayer.pause();
+                emptyStatePrompt.classList.add('hidden');
+                trackTitleEl.textContent = 'SIMULATION_MODE :: Sugar Tempo (120 BPM Pulse)';
+                btnPlayPause.disabled = false;
+                btnStop.disabled = false;
+                updatePlayStateUI(true);
+                showToast('Đã bật giả lập nhịp đập 120 BPM. Bạn có thể nạp file MP3 bất cứ lúc nào!');
+            });
+
+            // Điều khiển Play / Pause
+            btnPlayPause.addEventListener('click', () => {
+                if (isDemoMode) {
+                    updatePlayStateUI(!isPlaying);
+                    return;
+                }
+                if (!isAudioLoaded) return;
+
+                initWebAudio();
+                if (audioPlayer.paused) {
+                    audioPlayer.play().then(() => {
+                        updatePlayStateUI(true);
+                    }).catch(() => {
+                        showToast('Không thể phát file âm thanh này.', true);
+                    });
+                } else {
+                    audioPlayer.pause();
+                    updatePlayStateUI(false);
+                }
+            });
+
+            // Điều khiển Stop
+            btnStop.addEventListener('click', () => {
+                if (isDemoMode) {
+                    isDemoMode = false;
+                    updatePlayStateUI(false);
+                    emptyStatePrompt.classList.remove('hidden');
+                    trackTitleEl.textContent = 'Chưa nạp file âm thanh (Kéo thả hoặc nhấn Chọn File MP3)';
+                    btnPlayPause.disabled = true;
+                    btnStop.disabled = true;
+                    return;
+                }
+                if (!isAudioLoaded) return;
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                updatePlayStateUI(false);
+            });
+
+            // Cập nhật thanh tiến trình & thời gian
+            function formatTime(sec) {
+                if (isNaN(sec) || !isFinite(sec)) return '00:00';
+                const m = Math.floor(sec / 60);
+                const s = Math.floor(sec % 60);
+                return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+            }
+
+            function updateDurationUI() {
+                if (audioPlayer.duration && !isNaN(audioPlayer.duration) && isFinite(audioPlayer.duration)) {
+                    timeDurationEl.textContent = formatTime(audioPlayer.duration);
+                    seekSlider.max = audioPlayer.duration;
+                }
+            }
+
+            audioPlayer.addEventListener('loadedmetadata', updateDurationUI);
+            audioPlayer.addEventListener('durationchange', updateDurationUI);
+            audioPlayer.addEventListener('canplay', updateDurationUI);
+            audioPlayer.addEventListener('loadeddata', updateDurationUI);
+
+            audioPlayer.addEventListener('timeupdate', () => {
+                if (timeDurationEl.textContent === '00:00' || timeDurationEl.textContent === '--:--') {
+                    updateDurationUI();
+                }
+                if (!isSeeking) {
+                    seekSlider.value = audioPlayer.currentTime;
+                    timeCurrentEl.textContent = formatTime(audioPlayer.currentTime);
+                }
+            });
+
+            audioPlayer.addEventListener('ended', () => {
+                updatePlayStateUI(false);
+                showToast('Đã phát hết bài hát.');
+            });
+
+            audioPlayer.addEventListener('error', () => {
+                showToast(`Không tìm thấy file nhạc: ${audioPlayer.getAttribute('src')}`, true);
+            });
+
+            seekSlider.addEventListener('input', () => {
+                isSeeking = true;
+                timeCurrentEl.textContent = formatTime(seekSlider.value);
+            });
+
+            seekSlider.addEventListener('change', () => {
+                audioPlayer.currentTime = seekSlider.value;
+                isSeeking = false;
+            });
+
+            // Âm lượng & Độ nhạy
+            volumeSlider.addEventListener('input', (e) => {
+                audioPlayer.volume = e.target.value;
+                audioPlayer.muted = false;
+                volumeIcon.className = e.target.value == 0
+                    ? 'fa-solid fa-volume-xmark'
+                    : 'fa-solid fa-volume-high';
+            });
+
+            btnMute.addEventListener('click', () => {
+                audioPlayer.muted = !audioPlayer.muted;
+                volumeIcon.className = audioPlayer.muted
+                    ? 'fa-solid fa-volume-xmark text-slate-500'
+                    : 'fa-solid fa-volume-high';
+            });
+
+            sensitivitySlider.addEventListener('input', (e) => {
+                beatSensitivity = parseFloat(e.target.value);
+            });
+
+            // --- HỆ THỐNG HẠT TRÁI TIM (PARTICLE HEART ENGINE) ---
+            let width = 0;
+            let height = 0;
+            let dpr = Math.min(window.devicePixelRatio || 1, 2);
+            let particles = [];
+            const PARTICLE_COUNT = window.innerWidth < 640 ? 1500 : 2400;
+            hudParticles.textContent = PARTICLE_COUNT.toLocaleString();
+
+            function getHeartPoint(t) {
+                const x = 16 * Math.pow(Math.sin(t), 3);
+                const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+                return { x, y };
+            }
+
+            class HeartParticle {
+                constructor() {
+                    this.reset();
+                }
+
+                reset() {
+                    this.t = Math.random() * Math.PI * 2;
+                    // Tốc độ trôi tuần hoàn dọc theo đường cong trái tim
+                    this.speed = (Math.random() < 0.5 ? 1 : -1) * (0.003 + Math.random() * 0.007);
+
+                    this.isOutline = Math.random() < 0.58;
+                    this.fillFactor = this.isOutline
+                        ? (0.95 + Math.random() * 0.08)
+                        : Math.pow(Math.random(), 0.5) * 0.94;
+
+                    // Pha bồng bềnh lơ lửng trong không gian (floating wave phases)
+                    this.floatPhaseX = Math.random() * Math.PI * 2;
+                    this.floatPhaseY = Math.random() * Math.PI * 2;
+                    this.floatSpeedX = 0.0015 + Math.random() * 0.0025;
+                    this.floatSpeedY = 0.002 + Math.random() * 0.003;
+                    this.floatAmp = 2.5 + Math.random() * 5.0;
+
+                    this.angle = Math.random() * Math.PI * 2;
+                    this.orbitSpeed = 0.015 + Math.random() * 0.025;
+                    this.size = this.isOutline ? (1.3 + Math.random() * 1.5) : (0.9 + Math.random() * 1.3);
+
+                    const colorRoll = Math.random();
+                    if (colorRoll > 0.86 && this.isOutline) {
+                        this.color = '#ffffff';
+                    } else if (colorRoll > 0.45) {
+                        this.color = '#ff1e6e';
+                    } else {
+                        this.color = '#ff0044';
+                    }
+
+                    this.alpha = this.isOutline ? (0.75 + Math.random() * 0.25) : (0.28 + Math.random() * 0.45);
+                }
+
+                updateAndDraw(ctx, centerX, centerY, heartScale, bassEnergy, midEnergy, timestamp) {
+                    // 1. Chuyển động lướt trôi dọc theo đường cong trái tim
+                    this.t = (this.t + this.speed * (1 + midEnergy * 2.0)) % (Math.PI * 2);
+                    const pos = getHeartPoint(this.t);
+
+                    // 2. Chuyển động bồng bềnh lơ lửng nhẹ nhàng trong không gian
+                    const floatX = Math.sin(timestamp * this.floatSpeedX + this.floatPhaseX) * this.floatAmp;
+                    const floatY = Math.cos(timestamp * this.floatSpeedY + this.floatPhaseY) * this.floatAmp;
+
+                    // 3. Tương tác đập bung nở đồng tâm theo trái tim
+                    const burstOffset = this.isOutline
+                        ? bassEnergy * 8
+                        : bassEnergy * 4;
+
+                    const drawX = centerX + (pos.x * this.fillFactor * heartScale) + (pos.x / 16 * burstOffset) + floatX;
+                    const drawY = centerY + (pos.y * this.fillFactor * heartScale) + (pos.y / 16 * burstOffset) + floatY;
+
+                    const dynamicSize = this.size * (1 + bassEnergy * 0.4);
+
+                    ctx.globalAlpha = Math.min(1, this.alpha + bassEnergy * 0.35);
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY, dynamicSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function initParticles() {
+                particles = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    particles.push(new HeartParticle());
+                }
+            }
+
+            function resizeCanvas() {
+                const rect = canvasWrapper.getBoundingClientRect();
+                width = rect.width;
+                height = rect.height;
+
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+            initParticles();
+
+            // Nạp bài hát mặc định khi mở trang
+            function loadDefaultTrack() {
+                // Ưu tiên nạp qua Data URL (từ sugar_data.js) để trình duyệt cấp toàn quyền đọc dải tần âm thanh qua Web Audio API
+                const audioSource = (window.SUGAR_B64 && window.SUGAR_B64.length > 100) ? window.SUGAR_B64 : DEFAULT_AUDIO_URL;
+                if (!audioSource) return;
+
+                try {
+                    isDemoMode = false;
+                    audioPlayer.src = audioSource;
+                    audioPlayer.load();
+
+                    trackTitleEl.textContent = `${DEFAULT_TRACK_TITLE} [DEFAULT_STREAM]`;
+                    emptyStatePrompt.classList.add("hidden");
+
+                    isAudioLoaded = true;
+                    btnPlayPause.disabled = false;
+                    btnStop.disabled = false;
+                    seekSlider.disabled = false;
+                    hudMode.textContent = "READY_DEFAULT";
+
+                    // Kích hoạt Web Audio & phát ngay khi user chạm/click lần đầu nếu bị chặn autoplay
+                    const resumeOnFirstGesture = () => {
+                        initWebAudio();
+                        if (audioPlayer.paused && isAudioLoaded && !isDemoMode) {
+                            audioPlayer.play().then(() => updatePlayStateUI(true)).catch(() => { });
+                        }
+                        window.removeEventListener('pointerdown', resumeOnFirstGesture);
+                        window.removeEventListener('keydown', resumeOnFirstGesture);
+                    };
+                    window.addEventListener('pointerdown', resumeOnFirstGesture, { once: true });
+                    window.addEventListener('keydown', resumeOnFirstGesture, { once: true });
+
+                    audioPlayer.play().then(() => {
+                        initWebAudio();
+                        updatePlayStateUI(true);
+                    }).catch(() => {
+                        updatePlayStateUI(false);
+                    });
+                } catch (err) {
+                    console.error("Lỗi nạp nhạc mặc định:", err);
+                }
+            }
+
+            loadDefaultTrack();
+
+            // --- VÒNG LẶP PHÂN TÍCH ÂM THANH & RENDER 60FPS ---
+            function renderLoop(timestamp) {
+                requestAnimationFrame(renderLoop);
+
+                let rawBass = 0;
+                let rawMid = 0;
+
+                let hasSpectrum = false;
+                if (isPlaying && isAudioLoaded && analyser) {
+                    analyser.getByteFrequencyData(dataArray);
+
+                    // 1. Dải tiếng trống Kick & Bass (40Hz - 220Hz): bin 1 -> 5
+                    let kickSum = 0;
+                    for (let i = 1; i <= 5; i++) {
+                        kickSum += dataArray[i];
+                    }
+                    const kickLevel = kickSum / (5 * 255);
+
+                    // 2. Dải tiếng Hát (Vocal) & Giai điệu Melody chính (250Hz - 2.5kHz): bin 6 -> 32
+                    let vocalSum = 0;
+                    for (let i = 6; i <= 32; i++) {
+                        vocalSum += dataArray[i];
+                    }
+                    const vocalLevel = vocalSum / (27 * 255);
+
+                    // 3. Dải Treble / Nhạc cụ cao (Hi-hats, Synthesizer shimmer): bin 33 -> 70
+                    let trebleSum = 0;
+                    for (let i = 33; i <= 70; i++) {
+                        trebleSum += dataArray[i];
+                    }
+                    const trebleLevel = trebleSum / (38 * 255);
+
+                    rawMid = vocalLevel;
+
+                    if (kickLevel > 0.04 || vocalLevel > 0.04) {
+                        hasSpectrum = true;
+
+                        // Bắt xung nhịp Kick dứt khoát
+                        const kickDelta = kickLevel - prevKickAvg;
+                        prevKickAvg = prevKickAvg * 0.85 + kickLevel * 0.15;
+
+                        let kickImpact = 0;
+                        if (kickDelta > 0.05 && kickLevel > 0.28) {
+                            kickImpact = Math.min(1.0, kickDelta * 3.2 + kickLevel * 0.4);
+                        } else {
+                            kickImpact = Math.max(0, (kickLevel - 0.35) * 0.5);
+                        }
+
+                        // Hòa trộn năng lượng: 65% Tiếng Trống Bass + 35% Giọng Hát Vocal & Giai Điệu
+                        // Giúp trái tim nảy mạnh theo nhịp trống và gợn sóng nhấp nhô theo từng câu hát
+                        const vocalImpact = Math.max(0, (vocalLevel - 0.12) / 0.88);
+                        rawBass = Math.min(1.0, kickImpact * 0.72 + vocalImpact * 0.45);
+
+                        for (let i = 0; i < 16; i++) {
+                            const binIndex = Math.floor(Math.pow(i / 16, 1.4) * 45) + 1;
+                            const val = dataArray[binIndex] / 255;
+                            spectrumBars[i].style.height = `${Math.max(12, val * 100)}%`;
+                            spectrumBars[i].style.backgroundColor = val > 0.7 ? '#ffffff' : '#ff1e6e';
+                        }
+                    } else {
+                        prevKickAvg = 0;
+                    }
+                }
+
+                // Nếu là chế độ mô phỏng DEMO test nhịp
+                if (!hasSpectrum && isPlaying && isDemoMode) {
+                    const curSec = timestamp / 1000;
+                    const beatPhase = (curSec % 0.500) / 0.500;
+                    let kick = 0;
+                    if (beatPhase < 0.22) {
+                        kick = Math.pow(1 - beatPhase / 0.22, 2.5);
+                    } else if (beatPhase >= 0.46 && beatPhase < 0.68) {
+                        const sub = (beatPhase - 0.46) / 0.22;
+                        kick = Math.pow(1 - sub, 2.0) * 0.35;
+                    }
+                    rawBass = kick;
+                    rawMid = 0.25 + 0.15 * Math.sin(curSec * 3);
+
+                    for (let i = 0; i < 16; i++) {
+                        const wave = Math.max(0.12, rawBass * Math.exp(-i * 0.14) + Math.random() * 0.08);
+                        spectrumBars[i].style.height = `${Math.min(100, wave * 100)}%`;
+                    }
+                } else if (!hasSpectrum) {
+                    // Khi không có âm thanh hoặc đoạn lặng: KHÔNG ĐẬP
+                    rawBass = 0;
+                    rawMid = 0;
+                    for (let i = 0; i < 16; i++) {
+                        spectrumBars[i].style.height = '12%';
+                    }
+                }
+
+                const boostedBass = Math.min(1.4, rawBass * beatSensitivity);
+
+                // Attack nhanh đón tiếng trống và câu hát, Decay mượt mà
+                if (boostedBass > smoothedBass) {
+                    smoothedBass += (boostedBass - smoothedBass) * 0.58;
+                } else {
+                    smoothedBass += (boostedBass - smoothedBass) * 0.20;
+                }
+                smoothedMid += (rawMid - smoothedMid) * 0.28;
+
+                if (smoothedBass - prevBass > 0.14 && smoothedBass > 0.42 && isPlaying) {
+                    shockwaves.push({
+                        scaleOffset: 0,
+                        alpha: 0.75
+                    });
+                }
+                prevBass = smoothedBass;
+
+                const bassPercent = Math.min(100, Math.round(smoothedBass * 85));
+                headerBassVal.textContent = `${bassPercent.toString().padStart(2, '0')}%`;
+
+                const filledBlocks = Math.round((bassPercent / 100) * 16);
+                hudAsciiBar.textContent = `[${'█'.repeat(filledBlocks)}${'░'.repeat(16 - filledBlocks)}]`;
+                const dbVal = smoothedBass > 0.01 ? (20 * Math.log10(smoothedBass)).toFixed(1) : '-40.0';
+                hudPeak.textContent = `${dbVal} dB`;
+
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.fillStyle = 'rgba(6, 6, 9, 0.38)';
+                ctx.fillRect(0, 0, width, height);
+
+                const centerX = width / 2;
+                const centerY = height * 0.47;
+
+                const minDimension = Math.min(width, height);
+                const baseHeartScale = (minDimension / 36) * 0.92;
+                const currentHeartScale = baseHeartScale * (1 + smoothedBass * 0.34);
+
+                const glowRadius = currentHeartScale * 22;
+                const radialGrad = ctx.createRadialGradient(
+                    centerX, centerY, currentHeartScale * 2,
+                    centerX, centerY, glowRadius
+                );
+                radialGrad.addColorStop(0, `rgba(255, 30, 110, ${0.18 + smoothedBass * 0.28})`);
+                radialGrad.addColorStop(0.55, `rgba(255, 0, 68, ${0.06 + smoothedBass * 0.12})`);
+                radialGrad.addColorStop(1, 'rgba(6, 6, 9, 0)');
+
+                ctx.fillStyle = radialGrad;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.globalCompositeOperation = 'lighter';
+
+                for (let i = shockwaves.length - 1; i >= 0; i--) {
+                    const sw = shockwaves[i];
+                    sw.scaleOffset += 0.38 + smoothedBass * 0.25;
+                    sw.alpha -= 0.022;
+
+                    if (sw.alpha <= 0) {
+                        shockwaves.splice(i, 1);
+                        continue;
+                    }
+
+                    const swScale = currentHeartScale + sw.scaleOffset;
+                    ctx.strokeStyle = `rgba(255, 45, 120, ${sw.alpha})`;
+                    ctx.lineWidth = 1.6;
+                    ctx.beginPath();
+                    for (let t = 0; t <= Math.PI * 2; t += 0.08) {
+                        const pt = getHeartPoint(t);
+                        const px = centerX + pt.x * swScale;
+                        const py = centerY + pt.y * swScale;
+                        if (t === 0) ctx.moveTo(px, py);
+                        else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+
+                for (let i = 0; i < particles.length; i++) {
+                    particles[i].updateAndDraw(
+                        ctx,
+                        centerX,
+                        centerY,
+                        currentHeartScale,
+                        smoothedBass,
+                        smoothedMid,
+                        timestamp
+                    );
+                }
+
+                ctx.globalAlpha = 0.18 + smoothedBass * 0.25;
+                ctx.strokeStyle = '#ff1e6e';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 8]);
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, baseHeartScale * 19.5 + smoothedBass * 12, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1;
+            }
+
+            requestAnimationFrame(renderLoop);
+        });
+    </script>
+</body>
+
+</html>
